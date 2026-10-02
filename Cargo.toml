@@ -1,0 +1,49 @@
+[package]
+name = "mike_rs"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+rigorous_parameters = []
+allow_non_canonical_pk = []
+
+[dependencies]
+fp2 = "0.4.2"
+rand_core = { version = "0.9", features = ["os_rng"] }
+sha3 = "0.10.8"
+nist-drbg-rs = "0.1.3"
+
+[dev-dependencies]
+criterion = { version = "0.8" }
+sha2 = "0.10.2"
+num-bigint = "0.4.3"
+
+[[bench]]
+name = "keygen_i"
+path = "benches/keygen_i.rs"
+harness = false
+
+[[bench]]
+name = "keygen_iii"
+path = "benches/keygen_iii.rs"
+harness = false
+
+[[bench]]
+name = "keygen_v"
+path = "benches/keygen_v.rs"
+harness = false
+
+[[bench]]
+name = "shared_secret_i"
+path = "benches/shared_secret_i.rs"
+harness = false
+
+[[bench]]
+name = "shared_secret_iii"
+path = "benches/shared_secret_iii.rs"
+harness = false
+
+[[bench]]
+name = "shared_secret_v"
+path = "benches/shared_secret_v.rs"
+harness = false
