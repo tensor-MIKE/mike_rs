@@ -45,10 +45,7 @@ impl<Fp2: Fp2Trait> Curve<Fp2> {
     /// Ensures that the output of the two isogeny chain leaks no information about the kernel
     /// and that keys which project curves which are equal under Frobenius produce the same
     /// public key
-    pub fn normalize_curve(four_torsion: &PointX<Fp2>) -> Curve<Fp2>
-    where
-        [(); Fp2::ENCODED_LENGTH]: Sized,
-    {
+    pub fn normalize_curve(four_torsion: &PointX<Fp2>) -> Curve<Fp2> {
         // Compute the three theta points
         // (a + b : a - b)
         // (a : b)
@@ -87,7 +84,7 @@ impl<Fp2: Fp2Trait> Curve<Fp2> {
         let A6 = -A3;
 
         // Encode them to canonical bytes and sort them lexiographically
-        let encoded_coefficients: [[u8; Fp2::ENCODED_LENGTH]; 12] = [
+        let encoded_coefficients: [Fp2::Encoded; 12] = [
             A1.encode(),
             A2.encode(),
             A3.encode(),
@@ -106,7 +103,7 @@ impl<Fp2: Fp2Trait> Curve<Fp2> {
         // TODO: we create a curve here as the PublicKey wants this, but we could just return the bytes
         // and represent the output as the encoded public key, it doesn't really matter but this computation
         // is essentially to please types rather than because we need this curve object.
-        let (A, ok): (Fp2, u32) = Fp2::decode(&smallest_coefficient);
+        let (A, ok): (Fp2, u32) = Fp2::decode(smallest_coefficient.as_ref());
         debug_assert!(ok == u32::MAX);
         let A24 = (A + Fp2::TWO).half().half();
 
@@ -117,10 +114,7 @@ impl<Fp2: Fp2Trait> Curve<Fp2> {
     /// every step, returning the codomain and a point of four torsion on the codomain.
     /// Requires as input a point with four torsion above the kernel.
     /// i.e. kernel has order 2^(e + 2)
-    pub fn two_isogeny_chain(&self, kernel: &PointX<Fp2>, e: usize) -> Self
-    where
-        [(); Fp2::ENCODED_LENGTH]: Sized,
-    {
+    pub fn two_isogeny_chain(&self, kernel: &PointX<Fp2>, e: usize) -> Self {
         debug_assert_eq!(e & 1, 0); // Ensure that the length is even
 
         // For 4-isogenies we represent (A + 2) / 4 projectively as (A24 : C24)

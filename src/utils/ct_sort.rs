@@ -18,20 +18,22 @@ fn ct_eq_u8(a: u8, b: u8) -> u32 {
 }
 
 // ==============================================================================
-// [u8; N] constant time operations
+// Byte slice constant time operations
 // ==============================================================================
 
 /// Returns `(less, equal)` masks where each is `u32::MAX` or `0`.
 /// `less`  = u32::MAX iff a < b (as little-endian integers)
 /// `equal` = u32::MAX iff a == b
+/// Requires `a` and `b` to have the same length.
 #[inline(always)]
-fn ct_lt_and_eq_le_bytes<const N: usize>(a: &[u8; N], b: &[u8; N]) -> (u32, u32) {
+fn ct_lt_and_eq_le_bytes(a: &[u8], b: &[u8]) -> (u32, u32) {
+    debug_assert_eq!(a.len(), b.len());
     let mut result: u32 = 0;
     let mut all_equal_so_far: u32 = u32::MAX;
 
-    for i in (0..N).rev() {
-        let less = ct_lt_u8(a[i], b[i]);
-        let equal = ct_eq_u8(a[i], b[i]);
+    for (&ai, &bi) in a.iter().zip(b.iter()).rev() {
+        let less = ct_lt_u8(ai, bi);
+        let equal = ct_eq_u8(ai, bi);
         result |= all_equal_so_far & less;
         all_equal_so_far &= equal;
     }
@@ -41,26 +43,28 @@ fn ct_lt_and_eq_le_bytes<const N: usize>(a: &[u8; N], b: &[u8; N]) -> (u32, u32)
 
 /// Returns `u32::MAX` if the little-endian integer `a < b`, `0` otherwise.
 #[inline(always)]
-fn ct_lt_le_bytes<const N: usize>(a: &[u8; N], b: &[u8; N]) -> u32 {
+fn ct_lt_le_bytes(a: &[u8], b: &[u8]) -> u32 {
     ct_lt_and_eq_le_bytes(a, b).0
 }
 
 /// Sets each byte of `a` to either its current value or the corresponding
 /// byte of `b`, depending on whether `ctl` is `0u32` or `u32::MAX`.
+/// Requires `a` and `b` to have the same length.
 #[inline(always)]
-fn ct_select_le_bytes<const N: usize>(ctl: u32, a: &mut [u8; N], b: &[u8; N]) {
+fn ct_select_le_bytes(ctl: u32, a: &mut [u8], b: &[u8]) {
+    debug_assert_eq!(a.len(), b.len());
     let mask = ctl as u8;
-    for i in 0..N {
-        a[i] ^= mask & (a[i] ^ b[i]);
+    for (ai, &bi) in a.iter_mut().zip(b.iter()) {
+        *ai ^= mask & (*ai ^ bi);
     }
 }
 
 /// Finds the lexicographically smallest value of an array of encoded Fp2 values
-pub fn ct_find_smallest_in_array<const N: usize>(input: &[[u8; N]]) -> [u8; N] {
+pub fn ct_find_smallest_in_array<T: Copy + AsRef<[u8]> + AsMut<[u8]>>(input: &[T]) -> T {
     let mut output = input[0];
     for value in &input[1..] {
-        let ctl = ct_lt_le_bytes(value, &output);
-        ct_select_le_bytes(ctl, &mut output, value)
+        let ctl = ct_lt_le_bytes(value.as_ref(), output.as_ref());
+        ct_select_le_bytes(ctl, output.as_mut(), value.as_ref())
     }
     output
 }

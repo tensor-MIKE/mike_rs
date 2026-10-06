@@ -2,6 +2,7 @@ pub mod basis;
 pub mod curve;
 pub mod jac_arithmetic;
 pub mod jac_point;
+#[cfg(test)]
 pub mod test_data;
 pub mod torsion_basis;
 pub mod two_isogeny_chain;

@@ -267,9 +267,9 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
 name = "fp2"
-version = "0.4.2"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "057e93b5f1cda09ecf8987771e3f6a1f837dad94e6e8119661d918a64d74b4df"
+checksum = "eee56976a12f2987d370f803ac6f00d7aaeda38c0b24b354fb6502814988d0df"
 dependencies = [
  "rand_core",
 ]
@@ -373,7 +373,7 @@ checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
 name = "mike_rs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "fp2",

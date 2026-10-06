@@ -1,11 +1,13 @@
 # MIKE: Module Isogeny Key Exchange
 
+[![CI](https://github.com/tensor-MIKE/mike_rs/actions/workflows/ci.yml/badge.svg)](https://github.com/tensor-MIKE/mike_rs/actions/workflows/ci.yml)
+
 An efficient and constant-time implementation of the isogeny-based NIKE, MIKE.
 
 ## Parameter Sets
 
 This implementation includes parameter sets targeting NIST levels I, III and V for both the "FastMIKE" and "RigorousMIKE". By default, the more compact and efficient parameters are selected. To compile with the larger parameter set use
-the feature flag `--features rigorous_parameters`
+the feature flag `--features conservative_parameters`
 
 ## Testing
 

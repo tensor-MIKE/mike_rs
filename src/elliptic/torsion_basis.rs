@@ -244,7 +244,7 @@ mod tests {
     }
 
     fn test_torsion_basis(A: &Fp2) {
-        let (curve, check) = Curve::<Fp2>::new(&A);
+        let (curve, check) = Curve::<Fp2>::new(A);
         assert_eq!(check, u32::MAX);
 
         for e in [246, 200, 100] {

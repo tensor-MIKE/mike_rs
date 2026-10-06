@@ -1,4 +1,4 @@
-#[cfg(feature = "rigorous_parameters")]
+#[cfg(feature = "conservative_parameters")]
 mod constants {
     // p374.117
     pub const MIKE_I_MODULUS: [u64; 6] = [
@@ -40,7 +40,7 @@ mod constants {
     ];
 }
 
-#[cfg(not(feature = "rigorous_parameters"))]
+#[cfg(not(feature = "conservative_parameters"))]
 mod constants {
     // p308.644
     pub const MIKE_I_MODULUS: [u64; 5] = [
@@ -149,18 +149,18 @@ mod tests {
     mike_tests!(fp: mike_v_fp,   MikeVFp);
     mike_tests!(fp2: mike_test_fp2,   MikeTestFp2,   MIKE_TEST_MODULUS,   5);
 
-    #[cfg(feature = "rigorous_parameters")]
+    #[cfg(feature = "conservative_parameters")]
     mike_tests!(fp2: mike_i_fp2,   MikeIFp2,   MIKE_I_MODULUS,   2);
-    #[cfg(not(feature = "rigorous_parameters"))]
+    #[cfg(not(feature = "conservative_parameters"))]
     mike_tests!(fp2: mike_i_fp2,   MikeIFp2,   MIKE_I_MODULUS,   2);
 
-    #[cfg(feature = "rigorous_parameters")]
+    #[cfg(feature = "conservative_parameters")]
     mike_tests!(fp2: mike_iii_fp2, MikeIIIFp2, MIKE_III_MODULUS, 2);
-    #[cfg(not(feature = "rigorous_parameters"))]
+    #[cfg(not(feature = "conservative_parameters"))]
     mike_tests!(fp2: mike_iii_fp2, MikeIIIFp2, MIKE_III_MODULUS, 15);
 
-    #[cfg(feature = "rigorous_parameters")]
+    #[cfg(feature = "conservative_parameters")]
     mike_tests!(fp2: mike_v_fp2,   MikeVFp2,   MIKE_V_MODULUS,   2);
-    #[cfg(not(feature = "rigorous_parameters"))]
+    #[cfg(not(feature = "conservative_parameters"))]
     mike_tests!(fp2: mike_v_fp2,   MikeVFp2,   MIKE_V_MODULUS,   4);
 }

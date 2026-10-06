@@ -1,14 +1,15 @@
 [package]
 name = "mike_rs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
+rust-version = "1.85"
 
 [features]
-rigorous_parameters = []
+conservative_parameters = []
 allow_non_canonical_pk = []
 
 [dependencies]
-fp2 = "0.4.2"
+fp2 = "0.5.1"
 rand_core = { version = "0.9", features = ["os_rng"] }
 sha3 = "0.10.8"
 nist-drbg-rs = "0.1.3"

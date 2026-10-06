@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-#[cfg(feature = "rigorous_parameters")]
+#[cfg(feature = "conservative_parameters")]
 pub mod mike_i_test_data {
     use crate::fields::MikeIFp2 as Fp2;
 
@@ -49,7 +49,7 @@ pub mod mike_i_test_data {
     ];
 }
 
-#[cfg(feature = "rigorous_parameters")]
+#[cfg(feature = "conservative_parameters")]
 pub mod mike_iii_test_data {
     use crate::fields::MikeIIIFp2 as Fp2;
 
@@ -104,7 +104,7 @@ pub mod mike_iii_test_data {
     ];
 }
 
-#[cfg(feature = "rigorous_parameters")]
+#[cfg(feature = "conservative_parameters")]
 pub mod mike_v_test_data {
     use crate::fields::MikeVFp2 as Fp2;
 
@@ -165,7 +165,7 @@ pub mod mike_v_test_data {
     ];
 }
 
-#[cfg(not(feature = "rigorous_parameters"))]
+#[cfg(not(feature = "conservative_parameters"))]
 pub mod mike_i_test_data {
     use crate::fields::MikeIFp2 as Fp2;
 
@@ -209,7 +209,7 @@ pub mod mike_i_test_data {
         140, 219, 85, 33, 143, 143, 145, 71, 145, 217, 145, 58, 152,
     ];
 }
-#[cfg(not(feature = "rigorous_parameters"))]
+#[cfg(not(feature = "conservative_parameters"))]
 pub mod mike_iii_test_data {
     use crate::fields::MikeIIIFp2 as Fp2;
 
@@ -260,7 +260,7 @@ pub mod mike_iii_test_data {
     ];
 }
 
-#[cfg(not(feature = "rigorous_parameters"))]
+#[cfg(not(feature = "conservative_parameters"))]
 pub mod mike_v_test_data {
     use crate::fields::MikeVFp2 as Fp2;
 

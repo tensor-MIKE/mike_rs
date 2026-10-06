@@ -68,7 +68,7 @@ impl<Fq: Fp2Trait> MikePublicKey<Fq> {
 
     /// An encoded Mike public key is represented by the Montgomery coefficient
     /// A for a curve E : y^2 = x^3 + Ax + x
-    pub fn encode(&self) -> [u8; Fq::ENCODED_LENGTH] {
+    pub fn encode(&self) -> Fq::Encoded {
         self.curve.A.encode()
     }
 
@@ -81,7 +81,9 @@ impl<Fq: Fp2Trait> MikePublicKey<Fq> {
     /// NOTE: the constructed curve is *not* checked to be supersingular here,
     /// but this is instead proven at run-time by ensuring the canonical basis sampled
     /// is of the expected order
-    pub fn decode(bytes: &[u8; Fq::ENCODED_LENGTH]) -> Result<Self, MikeError> {
+    ///
+    /// Inputs which are not exactly `Fq::ENCODED_LENGTH` bytes long are rejected.
+    pub fn decode(bytes: &[u8]) -> Result<Self, MikeError> {
         let (A, check) = Fq::decode(bytes);
 
         // If check is zero, then the value supplied was non-canonical and is rejected
@@ -174,10 +176,7 @@ impl<Fp: FqTrait, Fp2: Fp2Trait, const N: usize> Mike<Fp, Fp2, N> {
 
     /// Compute the codomain of the isogeny with kernel
     /// 4 (P + [x] Q) using the precomputed basis E0[2^e] = <P, Q>
-    fn public_key(&self, scalar: &[u8]) -> MikePublicKey<Fp2>
-    where
-        [(); Fp2::ENCODED_LENGTH]: Sized,
-    {
+    fn public_key(&self, scalar: &[u8]) -> MikePublicKey<Fp2> {
         let E0 = self.params.starting_curve;
 
         // Compute P + [x]Q with x-only arithmetic
@@ -200,10 +199,7 @@ impl<Fp: FqTrait, Fp2: Fp2Trait, const N: usize> Mike<Fp, Fp2, N> {
     fn keygen_impl(
         &self,
         scalar_bytes: &[u8; N],
-    ) -> (MikePublicKey<Fp2>, MikePrivateKey<Fp, Fp2, N>)
-    where
-        [(); Fp2::ENCODED_LENGTH]: Sized,
-    {
+    ) -> (MikePublicKey<Fp2>, MikePrivateKey<Fp, Fp2, N>) {
         let public_key = self.public_key(scalar_bytes);
         let secret_key = self.secret_key(scalar_bytes);
 
@@ -214,10 +210,7 @@ impl<Fp: FqTrait, Fp2: Fp2Trait, const N: usize> Mike<Fp, Fp2, N> {
     pub fn keygen<R: TryRngCore + TryCryptoRng>(
         &self,
         rng: &mut R,
-    ) -> Result<(MikePublicKey<Fp2>, MikePrivateKey<Fp, Fp2, N>), MikeError>
-    where
-        [(); Fp2::ENCODED_LENGTH]: Sized,
-    {
+    ) -> Result<(MikePublicKey<Fp2>, MikePrivateKey<Fp, Fp2, N>), MikeError> {
         let scalar = self.generate_scalar(rng)?;
         Ok(self.keygen_impl(&scalar))
     }
@@ -227,10 +220,7 @@ impl<Fp: FqTrait, Fp2: Fp2Trait, const N: usize> Mike<Fp, Fp2, N> {
     pub fn keygen_seeded(
         &self,
         seed: &[u8],
-    ) -> Result<(MikePublicKey<Fp2>, MikePrivateKey<Fp, Fp2, N>), MikeError>
-    where
-        [(); Fp2::ENCODED_LENGTH]: Sized,
-    {
+    ) -> Result<(MikePublicKey<Fp2>, MikePrivateKey<Fp, Fp2, N>), MikeError> {
         let mut rng =
             AesCtr256Drbg::new(seed, &[], Policy::default()).map_err(|_| MikeError::RngFailure)?;
         let scalar = self.generate_scalar(&mut rng)?;
@@ -316,10 +306,7 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
     }
 
     #[cfg(not(feature = "allow_non_canonical_pk"))]
-    fn is_canonical_pk(domain: &Curve<Fp2>, p4: &Point<Fp2>) -> Result<(), MikeError>
-    where
-        [(); Fp2::ENCODED_LENGTH]: Sized,
-    {
+    fn is_canonical_pk(domain: &Curve<Fp2>, p4: &Point<Fp2>) -> Result<(), MikeError> {
         let E_normalized = Curve::normalize_curve(&p4.to_point_x());
         let is_canonical = domain.A.equals(&E_normalized.A) == u32::MAX;
         if !is_canonical {
@@ -334,10 +321,7 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
     fn is_canonical_supersingular(
         domain: &Curve<Fp2>,
         p8_q8: &[Point<Fp2>],
-    ) -> Result<(), MikeError>
-    where
-        [(); Fp2::ENCODED_LENGTH]: Sized,
-    {
+    ) -> Result<(), MikeError> {
         let p4 = domain.double(&p8_q8[0]);
         let p2 = domain.double(&p4);
         let q2 = domain.double_iter(&p8_q8[1], 2);
@@ -363,10 +347,7 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
     /// We take the four absolute invariants computed from the codomain
     /// of the isogeny chain and hash them using Sha3_256 to compute a
     /// 32 byte secret used as a shared key
-    fn hash_modular_invariants(&self, invariants: &[Fp]) -> [u8; 32]
-    where
-        [(); Fp::ENCODED_LENGTH]: Sized,
-    {
+    fn hash_modular_invariants(&self, invariants: &[Fp]) -> [u8; 32] {
         let mut hasher = Sha3_256::new();
         for inv in invariants.iter() {
             let encoded = inv.encode();
@@ -376,11 +357,7 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
     }
 
     /// Compute a shared secret between two parties
-    pub fn shared_secret(&self, other_pk: &MikePublicKey<Fp2>) -> Result<[u8; 32], MikeError>
-    where
-        [(); Fp::ENCODED_LENGTH]: Sized,
-        [(); Fp2::ENCODED_LENGTH]: Sized,
-    {
+    pub fn shared_secret(&self, other_pk: &MikePublicKey<Fp2>) -> Result<[u8; 32], MikeError> {
         let domain = other_pk.curve;
         // TODO: we could precompute 1/3 for each field to avoid this inversion
         let a_div_three = domain.A / Fp2::THREE;

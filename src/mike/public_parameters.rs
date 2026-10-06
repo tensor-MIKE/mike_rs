@@ -2,7 +2,7 @@ pub use mike_i_parameters::{MIKE_I_PARAMS, N_I};
 pub use mike_iii_parameters::{MIKE_III_PARAMS, N_III};
 pub use mike_v_parameters::{MIKE_V_PARAMS, N_V};
 
-#[cfg(feature = "rigorous_parameters")]
+#[cfg(feature = "conservative_parameters")]
 pub mod mike_i_parameters {
     use crate::elliptic::basis::BasisX;
     use crate::elliptic::curve::Curve;
@@ -82,7 +82,7 @@ pub mod mike_i_parameters {
     );
 }
 
-#[cfg(feature = "rigorous_parameters")]
+#[cfg(feature = "conservative_parameters")]
 pub mod mike_iii_parameters {
     use crate::elliptic::basis::BasisX;
     use crate::elliptic::curve::Curve;
@@ -172,7 +172,7 @@ pub mod mike_iii_parameters {
     );
 }
 
-#[cfg(feature = "rigorous_parameters")]
+#[cfg(feature = "conservative_parameters")]
 pub mod mike_v_parameters {
     use crate::elliptic::basis::BasisX;
     use crate::elliptic::curve::Curve;
@@ -272,7 +272,7 @@ pub mod mike_v_parameters {
     );
 }
 
-#[cfg(not(feature = "rigorous_parameters"))]
+#[cfg(not(feature = "conservative_parameters"))]
 pub mod mike_i_parameters {
     use crate::elliptic::basis::BasisX;
     use crate::elliptic::curve::Curve;
@@ -347,7 +347,7 @@ pub mod mike_i_parameters {
     );
 }
 
-#[cfg(not(feature = "rigorous_parameters"))]
+#[cfg(not(feature = "conservative_parameters"))]
 pub mod mike_iii_parameters {
     use crate::elliptic::basis::BasisX;
     use crate::elliptic::curve::Curve;
@@ -434,7 +434,7 @@ pub mod mike_iii_parameters {
     );
 }
 
-#[cfg(not(feature = "rigorous_parameters"))]
+#[cfg(not(feature = "conservative_parameters"))]
 pub mod mike_v_parameters {
     use crate::elliptic::basis::BasisX;
     use crate::elliptic::curve::Curve;
