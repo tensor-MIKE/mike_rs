@@ -1,7 +1,7 @@
 use fp2::traits::Fp2 as Fp2Trait;
 
 use super::{curve::Curve, x_point::PointX};
-use crate::utils::ct_sort::ct_find_smallest_in_array;
+use crate::utils::ct_sort::ct_find_largest_in_array;
 
 impl<Fp2: Fp2Trait> Curve<Fp2> {
     /// Compute the codomain of the 4-isogeny E -> E/<ker> for [2]ker != (0 : 1)
@@ -41,7 +41,7 @@ impl<Fp2: Fp2Trait> Curve<Fp2> {
 
     /// Given a point of four torsion on an elliptic curve, compute all six isomorphic
     /// Montgomery coefficients as well as their Galois conjugates and pick the
-    /// lexicographically smallest one.
+    /// lexicographically largest one.
     /// Ensures that the output of the two isogeny chain leaks no information about the kernel
     /// and that keys which project curves which are equal under Frobenius produce the same
     /// public key
@@ -98,12 +98,12 @@ impl<Fp2: Fp2Trait> Curve<Fp2> {
             A5.conjugate().encode(),
             A6.conjugate().encode(),
         ];
-        let smallest_coefficient = ct_find_smallest_in_array(&encoded_coefficients);
+        let largest_coefficient = ct_find_largest_in_array(&encoded_coefficients);
 
         // TODO: we create a curve here as the PublicKey wants this, but we could just return the bytes
         // and represent the output as the encoded public key, it doesn't really matter but this computation
         // is essentially to please types rather than because we need this curve object.
-        let (A, ok): (Fp2, u32) = Fp2::decode(smallest_coefficient.as_ref());
+        let (A, ok): (Fp2, u32) = Fp2::decode(largest_coefficient.as_ref());
         debug_assert!(ok == u32::MAX);
         let A24 = (A + Fp2::TWO).half().half();
 

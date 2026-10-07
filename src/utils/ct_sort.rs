@@ -59,11 +59,11 @@ fn ct_select_le_bytes(ctl: u32, a: &mut [u8], b: &[u8]) {
     }
 }
 
-/// Finds the lexicographically smallest value of an array of encoded Fp2 values
-pub fn ct_find_smallest_in_array<T: Copy + AsRef<[u8]> + AsMut<[u8]>>(input: &[T]) -> T {
+/// Finds the lexicographically largest value of an array of encoded Fp2 values
+pub fn ct_find_largest_in_array<T: Copy + AsRef<[u8]> + AsMut<[u8]>>(input: &[T]) -> T {
     let mut output = input[0];
     for value in &input[1..] {
-        let ctl = ct_lt_le_bytes(value.as_ref(), output.as_ref());
+        let ctl = ct_lt_le_bytes(output.as_ref(), value.as_ref());
         ct_select_le_bytes(ctl, output.as_mut(), value.as_ref())
     }
     output
@@ -155,8 +155,8 @@ mod tests {
     }
 
     #[test]
-    fn test_ct_find_smallest_in_array() {
-        assert_eq!(ct_find_smallest_in_array(&[le8(3), le8(1), le8(2)]), le8(1));
-        assert_eq!(ct_find_smallest_in_array(&[le8(5)]), le8(5));
+    fn test_ct_find_largest_in_array() {
+        assert_eq!(ct_find_largest_in_array(&[le8(3), le8(1), le8(2)]), le8(3));
+        assert_eq!(ct_find_largest_in_array(&[le8(5)]), le8(5));
     }
 }
