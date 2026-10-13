@@ -46,6 +46,12 @@ impl<Fp2: Fp2Trait> Curve<Fp2> {
     /// and that keys which project curves which are equal under Frobenius produce the same
     /// public key
     pub fn normalize_curve(four_torsion: &PointX<Fp2>) -> Curve<Fp2> {
+        let (a, mut c) = Self::normalization_coefficients(four_torsion);
+        Fp2::batch_invert(&mut c);
+        Self::normalize_curve_with_inverses(a, c)
+    }
+
+    pub(crate) fn normalization_coefficients(four_torsion: &PointX<Fp2>) -> ([Fp2; 3], [Fp2; 3]) {
         // Compute the three theta points
         // (a + b : a - b)
         // (a : b)
@@ -66,15 +72,17 @@ impl<Fp2: Fp2Trait> Curve<Fp2> {
         let b2_4 = b2.n_square(2);
 
         // Compute the three distinct A coefficients
-        let mut A1 = -(a0_4 + b0_4).mul2();
-        let mut A2 = -(a1_4 + b1_4).mul2();
-        let mut A3 = -(a2_4 + b2_4).mul2();
-        let C1 = a0_4 - b0_4;
-        let C2 = a1_4 - b1_4;
-        let C3 = a2_4 - b2_4;
-        let mut inv = [C1, C2, C3];
-        Fp2::batch_invert(&mut inv);
+        let a = [
+            -(a0_4 + b0_4).mul2(),
+            -(a1_4 + b1_4).mul2(),
+            -(a2_4 + b2_4).mul2(),
+        ];
+        let c = [a0_4 - b0_4, a1_4 - b1_4, a2_4 - b2_4];
+        (a, c)
+    }
 
+    pub(crate) fn normalize_curve_with_inverses(a: [Fp2; 3], inv: [Fp2; 3]) -> Curve<Fp2> {
+        let [mut A1, mut A2, mut A3] = a;
         // Compute the 6 normalised coefficients
         A1 *= inv[0];
         A2 *= inv[1];

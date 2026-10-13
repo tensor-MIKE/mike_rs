@@ -1,3 +1,8 @@
+#[cfg(any(feature = "simd", test))]
+pub(crate) mod batch_simd;
+#[cfg(any(feature = "simd", test))]
+pub(crate) mod coordinate_simd;
+
 pub mod dim_four;
 pub mod dim_two;
 pub(crate) mod isogeny;

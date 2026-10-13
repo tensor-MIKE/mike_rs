@@ -50,7 +50,7 @@ impl<Fq: FqTrait> ThetaStructure<Fq> {
 
         let mut domain = *self;
         let mut k = 0;
-        for _ in 0..len {
+        for step in 0..len {
             // Perform doublings of the kernel elements, decreasing the values of orders
             k = domain.advance_strategy(&mut kernel_pts, &mut orders, k);
 
@@ -59,7 +59,13 @@ impl<Fq: FqTrait> ThetaStructure<Fq> {
             let T2 = kernel_pts[2 * k + 1];
 
             // Perform one step of the (2,2) isogeny and push through all points.
-            domain = ThetaStructure::two_isogeny(&T1, &T2, &mut kernel_pts[..(2 * k)]);
+            let inv_null_dual =
+                ThetaStructure::two_isogeny_evaluate(&T1, &T2, &mut kernel_pts[..(2 * k)]);
+            // Only the public strategy controls this decision. Consecutive
+            // isogenies need no intervening domain construction.
+            if step == len - 1 || (k > 0 && orders[k - 1] > 2) {
+                domain = ThetaStructure::new_from_inv_null_dual(inv_null_dual);
+            }
 
             // Reduce the order of the points we evaluated
             for ord in orders.iter_mut().take(k) {
@@ -76,6 +82,44 @@ impl<Fq: FqTrait> ThetaStructure<Fq> {
 mod tests {
     use super::ThetaStructure;
     use crate::theta::test_data::{OA_NULL, OB_NULL, P, Q};
+
+    #[test]
+    fn scheduled_domains_match_eager_chain() {
+        use crate::theta::dim_four::ThetaPoint;
+
+        let domain = ThetaStructure::new_from_null_point(OA_NULL);
+        for len in [
+            0usize, 1, 2, 3, 4, 5, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 241, 242,
+        ] {
+            // Use kernels of the requested order from the full test chain.
+            let p = domain.double_iter(&P, 242 - len);
+            let q = domain.double_iter(&Q, 242 - len);
+            let space = (usize::BITS - len.leading_zeros() + 1) as usize;
+            let mut pts = vec![ThetaPoint::default(); 2 * space];
+            let mut orders = vec![0; space];
+            pts[0] = p;
+            pts[1] = q;
+            orders[0] = len;
+            let mut eager = domain;
+            let mut k = 0;
+            for _ in 0..len {
+                k = eager.advance_strategy(&mut pts, &mut orders, k);
+                let t1 = pts[2 * k];
+                let t2 = pts[2 * k + 1];
+                eager = ThetaStructure::two_isogeny(&t1, &t2, &mut pts[..2 * k]);
+                for order in orders.iter_mut().take(k) {
+                    *order -= 1;
+                }
+                k = k.saturating_sub(1);
+            }
+            let actual = domain.dim_four_isogeny_chain(&p, &q, len);
+            assert_eq!(
+                actual.null_point().equals(&eager.null_point()),
+                u32::MAX,
+                "length {len}"
+            );
+        }
+    }
 
     #[test]
     fn test_two_two_chain() {

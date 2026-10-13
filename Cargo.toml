@@ -7,6 +7,8 @@ rust-version = "1.85"
 [features]
 conservative_parameters = []
 allow_non_canonical_pk = []
+# Four-lane field arithmetic. Requires Rust 1.89.
+simd = ["fp2/simd"]
 
 [dependencies]
 fp2 = "0.5.1"
@@ -48,3 +50,11 @@ harness = false
 name = "shared_secret_v"
 path = "benches/shared_secret_v.rs"
 harness = false
+
+[[bench]]
+name = "batch_shared_secret"
+path = "benches/batch_shared_secret.rs"
+harness = false
+
+[patch.crates-io]
+fp2 = { git = "https://github.com/GiacomoPope/fp2.git", rev = "8a4365cae5d0610ec5da214efa42db226c18eb1d" }

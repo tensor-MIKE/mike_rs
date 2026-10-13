@@ -485,6 +485,11 @@ impl<Fq: FqTrait> ThetaStructure<Fq> {
         }
     }
 
+    #[cfg(any(feature = "simd", test))]
+    pub(crate) fn doubling_constants(&self) -> (ThetaPoint<Fq>, ThetaPoint<Fq>) {
+        (self.inv_null_point, self.inv_null_point_dual_sq)
+    }
+
     /// Return the null point of the theta structure
     pub fn null_point(&self) -> ThetaPoint<Fq> {
         self.null_point

@@ -6,6 +6,15 @@ impl<Fq: FqTrait> ThetaStructure<Fq> {
     // 8a + 4S + 4a + 7a + 9a + 1I + 9M
     // = 1I + 9M + 4S + 28a
     pub fn special_modular_invariants(&self) -> [Fq; 9] {
+        let (theta_0, theta_n) = self.special_modular_invariants_parts();
+        // 1I + 9M
+        let theta_0_inv = theta_0.invert();
+        Self::normalize_special_modular_invariants(theta_n, &theta_0_inv)
+    }
+
+    /// Compute theta_0 and theta_n before normalizing the special invariants.
+    /// The inverse of theta_0 may be shared with other independent computations.
+    pub(crate) fn special_modular_invariants_parts(&self) -> (Fq, [Fq; 9]) {
         let null = self.null_point();
 
         let x0 = null[0];
@@ -41,11 +50,17 @@ impl<Fq: FqTrait> ThetaStructure<Fq> {
         let (s6, s7) = (u2 + t, u2 - t);
         let (s8, s9) = (u3 + t, u3 - t);
 
-        // 1I + 9M
-        let theta_0_inv = s0.invert();
-        let mut theta_n = [s1, s2, s3, s4, s5, s6, s7, s8, s9];
+        let theta_n = [s1, s2, s3, s4, s5, s6, s7, s8, s9];
+        (s0, theta_n)
+    }
+
+    /// Finish invariant normalization using the inverse of theta_0.
+    pub(crate) fn normalize_special_modular_invariants(
+        mut theta_n: [Fq; 9],
+        theta_0_inv: &Fq,
+    ) -> [Fq; 9] {
         for t in theta_n.iter_mut() {
-            *t *= theta_0_inv;
+            *t *= *theta_0_inv;
         }
 
         // 3a
@@ -63,6 +78,11 @@ impl<Fq: FqTrait> ThetaStructure<Fq> {
         // Cost: 1I + 9M + 4S + 28a
         let theta_n = self.special_modular_invariants();
 
+        Self::absolute_modular_invariants_from_special(theta_n)
+    }
+
+    /// Finish the absolute invariants after normalizing the special invariants.
+    pub(crate) fn absolute_modular_invariants_from_special(theta_n: [Fq; 9]) -> [Fq; 4] {
         // Compute si^j for i in range 1..9 and j in range 1..5
         // Cost 9 * (2M + 2S)
         let powers: [(Fq, Fq, Fq, Fq); 9] = theta_n.map(|s| {

@@ -260,6 +260,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
+name = "fearless_simd"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3296eb97d869113eaf148a6bdf01884e90b3828ad7ae2340b0f93362fc158611"
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -268,9 +274,9 @@ checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 [[package]]
 name = "fp2"
 version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eee56976a12f2987d370f803ac6f00d7aaeda38c0b24b354fb6502814988d0df"
+source = "git+https://github.com/GiacomoPope/fp2.git?rev=8a4365cae5d0610ec5da214efa42db226c18eb1d#8a4365cae5d0610ec5da214efa42db226c18eb1d"
 dependencies = [
+ "fearless_simd",
  "rand_core",
 ]
 

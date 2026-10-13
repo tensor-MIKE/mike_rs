@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        features: ["", "conservative_parameters"]
+        features: ["", "conservative_parameters", "simd", "simd,conservative_parameters"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

@@ -1,4 +1,3 @@
-
 use crate::fields::MikeTestFp2 as Fp2;
 
 // A1 is a QR in the field
