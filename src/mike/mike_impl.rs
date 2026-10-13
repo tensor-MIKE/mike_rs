@@ -7,7 +7,7 @@ use rand_core::{TryCryptoRng, TryRngCore};
 use sha3::{Digest, Sha3_256};
 
 /// Constants associated to the field used in Mike
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MikeConstants {
     f: usize, // The base field has characteristic p = c*2^f - 1 for odd c
     c: usize, // The base field has characteristic p = c*2^f - 1 for odd c
@@ -52,6 +52,7 @@ pub enum MikeError {
     UnsupportedPublicKey,
     NonSupersingularPublicKey,
     NonCanonicalPublicKey,
+    MismatchedParameters,
     RngFailure,
 }
 
@@ -137,7 +138,7 @@ pub struct Mike<Fp: FqTrait, Fp2: Fp2Trait, const N: usize> {
     params: MikeParameters<Fp2>,
 }
 
-impl<Fp: FqTrait, Fp2: Fp2Trait, const N: usize> Mike<Fp, Fp2, N> {
+impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> Mike<Fp, Fp2, N> {
     /// Construct a `Mike` instance from a parameter set.
     pub const fn new(params: &MikeParameters<Fp2>) -> Self {
         Self {
@@ -226,6 +227,151 @@ impl<Fp: FqTrait, Fp2: Fp2Trait, const N: usize> Mike<Fp, Fp2, N> {
         let scalar = self.generate_scalar(&mut rng)?;
         Ok(self.keygen_impl(&scalar))
     }
+
+    /// Prepare and validate a peer public key once for agreement with multiple keys.
+    ///
+    /// This performs the same supersingularity and canonicality checks as
+    /// `MikePrivateKey::shared_secret`, before any private-key computation.
+    /// As with scalar agreement, the peer must first be parsed with
+    /// `MikePublicKey::decode`; unchecked, malformed curves constructed with
+    /// `MikePublicKey::new` are outside this method's input contract.
+    pub fn prepare_peer(
+        &self,
+        other_pk: &MikePublicKey<Fp2>,
+    ) -> Result<PreparedPeer<Fp, Fp2, N>, MikeError> {
+        let domain = other_pk.curve;
+        let constants = self.params.constants;
+
+        let e_diff = constants.f - (constants.e + 2);
+        let cofactor_bytes = constants.c.to_le_bytes();
+        let cofactor_bits = (usize::BITS - constants.c.leading_zeros()) as usize;
+        let basis = domain.torsion_basis_2e_vartime(e_diff, &cofactor_bytes, cofactor_bits);
+
+        // Full points of order 2^(e + 2) with (X : Y : Z) coordinates
+        let (P, Q) = domain.lift_to_jacobian(&basis);
+
+        let points = self.prepare_lifted_peer_points(domain, P, Q)?;
+
+        // Before we compute the chain, we check whether P8 and Q8 are points
+        // of order exactly 8. This depends only on public data, so needs not
+        // be constant time. We also ensure the public key is the correct
+        // normalization as expected from the key generation.
+        MikePrivateKey::<Fp, Fp2, N>::is_canonical_supersingular(&domain, &points.scholten_kernel)?;
+
+        // The ladder uses the Jacobian source x-coordinate X/Z^2.
+        let P_x = points.P.X / points.P.Z.square();
+        let Q_x = points.Q.X / points.Q.Z.square();
+
+        Ok(self.finish_prepared_peer(points, P_x, Q_x))
+    }
+
+    // Complete the public-point work after the basis is lifted.
+    fn prepare_lifted_peer_points(
+        &self,
+        curve: Curve<Fp2>,
+        P: Point<Fp2>,
+        Q: Point<Fp2>,
+    ) -> Result<PeerPoints<Fp2>, MikeError> {
+        let constants = self.params.constants;
+        let a_div_three = curve.A / Fp2::THREE;
+
+        let (chain_doublings, [P_32, Q_32]) =
+            curve.prepare_chain_doublings(&a_div_three, &P, &Q, constants.e);
+
+        // Compute points of order 16 for the diagonal isogeny kernel
+        let P_16 = curve.double(&P_32);
+        let Q_16 = curve.double(&Q_32);
+
+        // Compute points of order 8 for the Scholten isogeny kernel
+        let P_8 = curve.double(&P_16);
+        let Q_8 = curve.double(&Q_16);
+
+        Ok(PeerPoints {
+            domain: curve,
+            a_div_three,
+            chain_doublings,
+            P,
+            Q,
+            P_32,
+            Q_32,
+            diagonal_kernel: [Q_16, P_16],
+            scholten_kernel: [P_8, Q_8],
+        })
+    }
+
+    fn finish_prepared_peer(
+        &self,
+        points: PeerPoints<Fp2>,
+        P_x: Fp2,
+        Q_x: Fp2,
+    ) -> PreparedPeer<Fp, Fp2, N> {
+        let PeerPoints {
+            domain,
+            a_div_three,
+            chain_doublings,
+            P,
+            Q,
+            P_32,
+            Q_32,
+            diagonal_kernel,
+            scholten_kernel,
+        } = points;
+        PreparedPeer {
+            _phantom_fp: core::marker::PhantomData,
+            _phantom_n: core::marker::PhantomData,
+            domain,
+            a_div_three,
+            chain_doublings,
+            P,
+            Q,
+            P_x,
+            Q_x,
+            P_32,
+            Q_32,
+            diagonal_kernel,
+            scholten_kernel,
+            constants: self.params.constants,
+        }
+    }
+}
+
+// Public intermediate points during preparation.
+struct PeerPoints<Fp2: Fp2Trait> {
+    domain: Curve<Fp2>,
+    a_div_three: Fp2,
+    chain_doublings: super::isogeny_chain::PreparedDoublings<Fp2>,
+    P: Point<Fp2>,
+    Q: Point<Fp2>,
+    P_32: Point<Fp2>,
+    Q_32: Point<Fp2>,
+    diagonal_kernel: [Point<Fp2>; 2],
+    scholten_kernel: [Point<Fp2>; 2],
+}
+
+/// A validated peer public key with its public torsion points prepared for reuse.
+///
+/// Construct via [`Mike::prepare_peer`]. The parameter set is bound to this value.
+/// Preparation is independent of the receiver's private scalar. It retains public
+/// basis multiples used by the isogeny strategy, so cloning also clones that cache.
+///
+/// This value contains no secret data, but its construction has variable runtime
+/// dependent on the public key.
+#[derive(Clone, Debug)]
+pub struct PreparedPeer<Fp: FqTrait, Fp2: Fp2Trait, const N: usize> {
+    _phantom_fp: core::marker::PhantomData<Fp>,
+    _phantom_n: core::marker::PhantomData<[u8; N]>,
+    domain: Curve<Fp2>,
+    a_div_three: Fp2,
+    chain_doublings: super::isogeny_chain::PreparedDoublings<Fp2>,
+    P: Point<Fp2>,
+    Q: Point<Fp2>,
+    P_x: Fp2,
+    Q_x: Fp2,
+    P_32: Point<Fp2>,
+    Q_32: Point<Fp2>,
+    diagonal_kernel: [Point<Fp2>; 2],
+    scholten_kernel: [Point<Fp2>; 2],
+    constants: MikeConstants,
 }
 
 /// Structure which holds what becomes the kernel for each of the three
@@ -245,9 +391,6 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
         curve: &Curve<Fp2>,
         a_div_three: &Fp2,
     ) -> (KernelPoints<Fp2>, [[Point<Fp2>; 2]; 2]) {
-        // The user's secret key is used for a variety of scalar multiplications
-        let s = self.secret;
-
         // Compute the x-only torsion basis of order 2^(e + 2)
         let e_diff: usize = self.constants.f - (self.constants.e + 2);
         let cofactor_bytes = self.constants.c.to_le_bytes();
@@ -257,33 +400,9 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
         // Full points of order 2^(e + 2) with (X : Y : Z) coordinates
         let (P, Q) = curve.lift_to_jacobian(&basis);
 
-        // Implementation Note:
-        // We really want to perform scalar multiplication by (s - 1) / 2,
-        // but instead of dividing by 2, we just ignore the first bit of s
-        // when we compute the scalar multiplications below.
-        // This is done by setting n_start = 1 in the `mul` methods
-
-        // Writing n = (s - 1) / 2
-        // Construct the kernel basis equal to (([(n]Q + Q, [n]Q), (-[n]P - P, -[n]P))
-        let s_P = curve.mul(&P, &s, 1, self.constants.e);
-        let s_Q = curve.mul(&Q, &s, 1, self.constants.e);
-        let T1 = curve.add(&s_Q, &Q);
-        let T3 = curve.add(&s_P, &P);
-        let chain_kernel = [[T1, s_Q], [-T3, -s_P]];
-
         // Compute intermediate points of order 32 by doubling many times
         let P_32 = curve.double_iter_with_ws(&P, a_div_three, self.constants.e - 3);
         let Q_32 = curve.double_iter_with_ws(&Q, a_div_three, self.constants.e - 3);
-
-        // Compute [n]P_32, [n]Q_32, for the final gluing kernel, we only need the bottom
-        // 5 bits of the scalars because of the order of P, Q
-        let s_P_32 = curve.mul(&P_32, &s, 1, 6);
-        let s_Q_32 = curve.mul(&Q_32, &s, 1, 6);
-        let T1 = curve.add(&s_Q_32, &Q_32);
-        let T3 = curve.add(&s_P_32, &P_32);
-        let T4 = curve.sub(&T1, &T3);
-        let T5 = curve.sub(&s_Q_32, &s_P_32);
-        let gluing_kernel = [[T1, s_Q_32], [-T3, -s_P_32], [T4, T5]];
 
         // Compute points of order 16 for the diagonal isogeny kernel
         let P_16 = curve.double(&P_32);
@@ -295,6 +414,59 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
         let Q_8 = curve.double(&Q_16);
         let scholten_kernel = [P_8, Q_8];
 
+        self.generate_kernels_from_prepared(
+            curve,
+            &P,
+            None,
+            &Q,
+            None,
+            &P_32,
+            &Q_32,
+            scholten_kernel,
+            diagonal_kernel,
+        )
+    }
+
+    /// Compute the private-key-dependent kernels from prepared public data.
+    fn generate_kernels_from_prepared(
+        &self,
+        curve: &Curve<Fp2>,
+        P: &Point<Fp2>,
+        P_x: Option<&Fp2>,
+        Q: &Point<Fp2>,
+        Q_x: Option<&Fp2>,
+        P_32: &Point<Fp2>,
+        Q_32: &Point<Fp2>,
+        scholten_kernel: [Point<Fp2>; 2],
+        diagonal_kernel: [Point<Fp2>; 2],
+    ) -> (KernelPoints<Fp2>, [[Point<Fp2>; 2]; 2]) {
+        // The user's secret key is used for a variety of scalar multiplications
+        let s = &self.secret;
+
+        // Implementation Note:
+        // We really want to perform scalar multiplication by (s - 1) / 2,
+        // but instead of dividing by 2, we just ignore the first bit of s
+        // when we compute the scalar multiplications below.
+        // This is done by setting n_start = 1 in the `mul` methods
+
+        // Writing n = (s - 1) / 2
+        // Construct the kernel basis equal to (([(n]Q + Q, [n]Q), (-[n]P - P, -[n]P))
+        let s_P = curve.mul_with_affine_x(P, P_x, s, 1, self.constants.e);
+        let s_Q = curve.mul_with_affine_x(Q, Q_x, s, 1, self.constants.e);
+        let T1 = curve.add(&s_Q, Q);
+        let T3 = curve.add(&s_P, P);
+        let chain_kernel = [[T1, s_Q], [-T3, -s_P]];
+
+        // Compute [n]P_32, [n]Q_32, for the final gluing kernel, we only need the bottom
+        // 5 bits of the scalars because of the order of P, Q
+        let s_P_32 = curve.mul(P_32, s, 1, 6);
+        let s_Q_32 = curve.mul(Q_32, s, 1, 6);
+        let T1 = curve.add(&s_Q_32, Q_32);
+        let T3 = curve.add(&s_P_32, P_32);
+        let T4 = curve.sub(&T1, &T3);
+        let T5 = curve.sub(&s_Q_32, &s_P_32);
+        let gluing_kernel = [[T1, s_Q_32], [-T3, -s_P_32], [T4, T5]];
+
         // Package all data together for the three gluing kernels and the chain kernel
         let kernel_data = KernelPoints {
             scholten_kernel,
@@ -303,6 +475,42 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
         };
 
         (kernel_data, chain_kernel)
+    }
+
+    /// Agree with a prepared, validated peer public key.
+    ///
+    /// Reuse a prepared peer only with receiver keys of the same parameter set.
+    /// This returns an error for a mismatched parameter set instead of using the
+    /// wrong isogeny length. Validation errors are returned by `prepare_peer`.
+    pub fn shared_secret_from_prepared(
+        &self,
+        peer: &PreparedPeer<Fp, Fp2, N>,
+    ) -> Result<[u8; 32], MikeError> {
+        if self.constants != peer.constants {
+            return Err(MikeError::MismatchedParameters);
+        }
+
+        let (gluing_kernel, chain_kernel) = self.generate_kernels_from_prepared(
+            &peer.domain,
+            &peer.P,
+            Some(&peer.P_x),
+            &peer.Q,
+            Some(&peer.Q_x),
+            &peer.P_32,
+            &peer.Q_32,
+            peer.scholten_kernel,
+            peer.diagonal_kernel,
+        );
+
+        let codomain = peer.domain.mike_isogeny_chain_with_prepared_doublings(
+            &peer.a_div_three,
+            &gluing_kernel,
+            &chain_kernel,
+            self.constants.e,
+            Some(&peer.chain_doublings),
+        );
+
+        Ok(self.hash_modular_invariants(&codomain.absolute_modular_invariants()))
     }
 
     #[cfg(not(feature = "allow_non_canonical_pk"))]
@@ -385,6 +593,73 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
 
         // Compute the secret as the hash of these values
         Ok(self.hash_modular_invariants(&invariants))
+    }
+}
+
+#[cfg(test)]
+mod prepared_test {
+    use super::*;
+
+    fn check<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize>(mike: Mike<Fp, Fp2, N>) {
+        for seed in [7u8, 19] {
+            let (pk, _) = mike.keygen_seeded(&[seed; 48]).unwrap();
+            let peer = mike.prepare_peer(&pk).unwrap();
+            assert_eq!(
+                peer.P_32.equals(&peer.domain.double_iter_with_ws(
+                    &peer.P,
+                    &peer.a_div_three,
+                    peer.constants.e - 3
+                )),
+                u32::MAX
+            );
+            assert_eq!(
+                peer.Q_32.equals(&peer.domain.double_iter_with_ws(
+                    &peer.Q,
+                    &peer.a_div_three,
+                    peer.constants.e - 3
+                )),
+                u32::MAX
+            );
+            for index in 0..4 {
+                let (_, key) = mike.keygen_seeded(&[index; 48]).unwrap();
+                let (gluing, kernel) = key.generate_kernels_from_prepared(
+                    &peer.domain,
+                    &peer.P,
+                    Some(&peer.P_x),
+                    &peer.Q,
+                    Some(&peer.Q_x),
+                    &peer.P_32,
+                    &peer.Q_32,
+                    peer.scholten_kernel,
+                    peer.diagonal_kernel,
+                );
+                let expected = peer.domain.mike_isogeny_chain(
+                    &peer.a_div_three,
+                    &gluing,
+                    &kernel,
+                    key.constants.e,
+                );
+                let actual = peer.domain.mike_isogeny_chain_with_prepared_doublings(
+                    &peer.a_div_three,
+                    &gluing,
+                    &kernel,
+                    key.constants.e,
+                    Some(&peer.chain_doublings),
+                );
+                assert_eq!(actual.null_point().equals(&expected.null_point()), u32::MAX);
+                assert_eq!(
+                    key.shared_secret_from_prepared(&peer).unwrap(),
+                    key.shared_secret(&pk).unwrap()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn prepared_doublings_match_unprepared() {
+        check(crate::mike::MIKE_I);
+        check(crate::mike::MIKE_III);
+        check(crate::mike::MIKE_V);
     }
 }
 

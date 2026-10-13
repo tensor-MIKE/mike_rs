@@ -5,6 +5,7 @@ pub(crate) mod test_data;
 
 use crate::fields::{MikeIFp, MikeIFp2, MikeIIIFp, MikeIIIFp2, MikeVFp, MikeVFp2};
 use mike_impl::Mike;
+pub use mike_impl::PreparedPeer;
 
 // Generics required are the Fp, and Fp2 fields as well as the length of the secret key in bytes
 type MikeI = Mike<MikeIFp, MikeIFp2, { public_parameters::N_I }>;

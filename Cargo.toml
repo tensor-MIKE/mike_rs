@@ -48,3 +48,8 @@ harness = false
 name = "shared_secret_v"
 path = "benches/shared_secret_v.rs"
 harness = false
+
+[[bench]]
+name = "batch_shared_secret"
+path = "benches/batch_shared_secret.rs"
+harness = false
