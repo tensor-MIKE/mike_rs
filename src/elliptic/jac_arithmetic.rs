@@ -289,6 +289,40 @@ impl<Fq: FqTrait> Curve<Fq> {
         n_start: usize,
         n_bitlen: usize,
     ) {
+        self.mul_into_with_affine_x(P3, P, None, n, n_start, n_bitlen);
+    }
+
+    /// Returns `n*P` as a new point.
+    ///
+    /// Integer n is encoded as unsigned little-endian, with length
+    /// nbitlen bits. Bits beyond that length are ignored. Bits consumed
+    /// start from n_start, when this is non-zero, it allows low bits to
+    /// be truncated.
+    ///
+    /// If `affine_x` is provided, it must be `P.X / P.Z.square()` (or zero for infinity).
+    pub(crate) fn mul_with_affine_x(
+        &self,
+        P: &Point<Fq>,
+        affine_x: Option<&Fq>,
+        n: &[u8],
+        n_start: usize,
+        n_bitlen: usize,
+    ) -> Point<Fq> {
+        let mut result = Point::INFINITY;
+        self.mul_into_with_affine_x(&mut result, P, affine_x, n, n_start, n_bitlen);
+        result
+    }
+
+    // `affine_x` is the Jacobian x-coordinate X/Z^2, computed from public data.
+    fn mul_into_with_affine_x(
+        &self,
+        P3: &mut Point<Fq>,
+        P: &Point<Fq>,
+        affine_x: Option<&Fq>,
+        n: &[u8],
+        n_start: usize,
+        n_bitlen: usize,
+    ) {
         // Montgomery ladder: see https://eprint.iacr.org/2017/212
 
         // We will need the complete 2*P at the end, to handle some
@@ -303,11 +337,17 @@ impl<Fq: FqTrait> Curve<Fq> {
             // normalize the source point to affine.
             // We do not care if P = inf, since that is handled at
             // the end in the corrective steps.
-            let Xp = xP.X / xP.Z;
+            let computed_x;
+            let Xp = if let Some(x) = affine_x {
+                x
+            } else {
+                computed_x = xP.X / xP.Z;
+                &computed_x
+            };
             for i in (n_start..n_bitlen).rev() {
                 let ctl = (((n[i >> 3] >> (i & 7)) as u32) & 1).wrapping_neg();
                 PointX::cond_swap(&mut X0, &mut X1, ctl ^ cc);
-                self.xdbladd_aff_into(&mut X0, &mut X1, &Xp);
+                self.xdbladd_aff_into(&mut X0, &mut X1, Xp);
                 cc = ctl;
             }
         } else {

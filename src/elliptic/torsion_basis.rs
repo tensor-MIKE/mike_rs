@@ -161,8 +161,16 @@ impl<Fp2: Fp2Trait> Curve<Fp2> {
     }
 
     pub fn lift_to_jacobian(&self, basis: &BasisX<Fp2>) -> (Point<Fp2>, Point<Fp2>) {
-        // Requires an inversion, could make a function which assumes this has been inverted?
         let PX = basis.P.x();
+        self.lift_to_jacobian_with_affine_p(basis, PX)
+    }
+
+    /// Lift a basis with the first point's affine x-coordinate already computed.
+    pub(crate) fn lift_to_jacobian_with_affine_p(
+        &self,
+        basis: &BasisX<Fp2>,
+        PX: Fp2,
+    ) -> (Point<Fp2>, Point<Fp2>) {
         let PY_sqr = PX * (PX.square() + PX * self.A + Fp2::ONE);
         let (PY, ok) = PY_sqr.sqrt();
         debug_assert!(ok == u32::MAX);
