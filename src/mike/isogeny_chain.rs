@@ -28,6 +28,13 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
                 orders[k - 1] - 1
             };
 
+            orders[k] = orders[k - 1].saturating_sub(m);
+            if orders[k] == 1 {
+                // The gluing kernel is supplied separately. This last pair is
+                // excluded from the gluing images, so no points are needed here.
+                break;
+            }
+
             let [p1, p2] = pts[2 * k - 2];
             let [p3, p4] = pts[2 * k - 1];
             pts[2 * k] = [
@@ -38,7 +45,6 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
                 self.double_iter_with_ws(&p3, a_div_three, m),
                 self.double_iter_with_ws(&p4, a_div_three, m),
             ];
-            orders[k] = orders[k - 1].saturating_sub(m);
         }
         k
     }
@@ -75,7 +81,7 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
         }
         k = k.saturating_sub(1);
 
-        for _ in 0..len {
+        for step in 0..len {
             // Perform doublings of the kernel elements, decreasing the values of orders
             k = domain.advance_strategy(&mut theta_kernel, &mut orders, k);
 
@@ -84,7 +90,13 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
             let T2 = theta_kernel[2 * k + 1];
 
             // Perform one step of the (2,2) isogeny and push through all points.
-            domain = ThetaStructure::two_isogeny(&T1, &T2, &mut theta_kernel[..(2 * k)]);
+            let inv_null_dual =
+                ThetaStructure::two_isogeny_evaluate(&T1, &T2, &mut theta_kernel[..(2 * k)]);
+            // Only the public strategy controls this decision. When the next
+            // kernel is already ready, its evaluation does not use `domain`.
+            if step == len - 1 || (k > 0 && orders[k - 1] > 2) {
+                domain = ThetaStructure::new_from_inv_null_dual(inv_null_dual);
+            }
 
             // Reduce the order of the points we evaluated
             for ord in orders.iter_mut().take(k) {

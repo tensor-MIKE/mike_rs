@@ -64,6 +64,18 @@ impl<Fq: FqTrait> ThetaStructure<Fq> {
         T2: &ThetaPoint<Fq>,
         image_points: &mut [ThetaPoint<Fq>],
     ) -> Self {
+        Self::new_from_inv_null_dual(Self::two_isogeny_evaluate(T1, T2, image_points))
+    }
+
+    /// Evaluate the isogeny and return its inverse dual null point.
+    ///
+    /// Construct the codomain's doubling constants only when the chain needs
+    /// to double on that codomain; consecutive isogeny evaluations do not use them.
+    pub(crate) fn two_isogeny_evaluate(
+        T1: &ThetaPoint<Fq>,
+        T2: &ThetaPoint<Fq>,
+        image_points: &mut [ThetaPoint<Fq>],
+    ) -> ThetaPoint<Fq> {
         let mut P8 = T1.square();
         let mut Q8 = T2.square();
         P8.set_hadamard();
@@ -78,6 +90,6 @@ impl<Fq: FqTrait> ThetaStructure<Fq> {
             P.set_hadamard();
         }
 
-        ThetaStructure::new_from_inv_null_dual(inv_null_point_dual)
+        inv_null_point_dual
     }
 }
