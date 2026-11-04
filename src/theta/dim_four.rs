@@ -330,29 +330,36 @@ impl<Fq: FqTrait> ThetaPointCompressed<Fq> {
 
     /// Compute the projective pseudo-inverse in place.
     ///
-    /// Cost: 3(n-1)M = 27M
+    /// Prefix products multiples[i] = x0 ... xi (i < 9) and suffix products
+    /// inverses[i] = x9 ... x(10 - i), then self[i] = inverses[9 - i] * multiples[i - 1].
+    /// The products with ONE (inverses[1], and the outputs for i = 0, 9) are
+    /// skipped, as is the full product multiples[9], which is never used.
+    ///
+    /// Cost: 3(n-2)M = 24M
     #[inline(always)]
     pub fn set_proj_batch_pseudo_inversion(&mut self) {
-        let mut multiples = [Fq::ONE; 10];
+        let mut multiples = [Fq::ONE; 9];
         multiples[0] = self[0];
-        for i in 1..10 {
+        for i in 1..9 {
             multiples[i] = multiples[i - 1] * self[i];
         }
 
         let mut inverses = [Fq::ONE; 10];
-        for i in 1..10 {
+        inverses[1] = self[9];
+        for i in 2..10 {
             inverses[i] = inverses[i - 1] * self[10 - i];
         }
 
         self[0] = inverses[9];
-        for i in 1..10 {
+        self[9] = multiples[8];
+        for i in 1..9 {
             self[i] = inverses[9 - i] * multiples[i - 1];
         }
     }
 
     /// Return the projective pseudo-inverse of this point.
     ///
-    /// Cost: 27M
+    /// Cost: 24M
     pub fn proj_batch_pseudo_inversion(&self) -> Self {
         let mut p = *self;
         p.set_proj_batch_pseudo_inversion();

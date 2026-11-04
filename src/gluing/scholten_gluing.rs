@@ -15,6 +15,9 @@ pub struct ScholtenImages<Fp: FqTrait> {
 
 pub struct ScholtenContext<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> {
     pub shift: Point<Fp2>,
+    // ZS^2 and ZS^3 for the shift S, shared by every call to add_components
+    pub shift_z2: Fp2,
+    pub shift_z3: Fp2,
     pub precomp: [Fp; 5],
     pub J: ThetaPointDimTwo<Fp>,
 }
@@ -175,7 +178,7 @@ fn scholten_image<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>>(
     // Compute two theta points from add components
     // TODO: things could be done over Fp here to
     // hyper optimise things.
-    let (u, v, w) = E.add_components(P, &ctx.shift);
+    let (u, v, w) = E.add_components_fixed_shift(P, &ctx.shift, &ctx.shift_z2, &ctx.shift_z3);
 
     let u_abs = fp2_norm(&u);
     let v_abs = fp2_norm(&v);
@@ -281,8 +284,12 @@ pub fn scholten_isogeny<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>>(
     let precomp = scholten_constants_precomputation(&mi);
 
     // Create a ctx object which holds the data required for all isogeny eval computation
+    let shift_z2 = P8.Z.square();
+    let shift_z3 = shift_z2 * P8.Z;
     let ctx: ScholtenContext<Fp, Fp2> = ScholtenContext {
         shift: P8,
+        shift_z2,
+        shift_z3,
         precomp,
         J,
     };
@@ -303,26 +310,26 @@ pub fn scholten_isogeny<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>>(
 
     // Push images through. For each pair of points (P, Q) we compute (P + T, Q + T) and (P - T, Q - T)
     // and then each pair of these points are kept within image_plus and image_minus
+    //
+    // P + T and P - T share most of their computation, so we compute them together.
+    // The generic formula is safe here: every image point is a multiple of the chain
+    // kernel of order > 2^5, so it is never zero or +-T.
     let T_trans = kernel_points.gluing_kernel[0];
-    let image_plus: Vec<[ThetaPointDimTwo<Fp>; 2]> = image_points
-        .iter()
-        .map(|&[P, Q]| {
-            [
-                scholten_image(E, &E.add(&P, &T_trans[0]), &ctx, true),
-                scholten_image(E, &E.add(&Q, &T_trans[1]), &ctx, true),
-            ]
-        })
-        .collect();
-
-    let image_minus: Vec<[ThetaPointDimTwo<Fp>; 2]> = image_points
-        .iter()
-        .map(|&[P, Q]| {
-            [
-                scholten_image(E, &E.sub(&P, &T_trans[0]), &ctx, true),
-                scholten_image(E, &E.sub(&Q, &T_trans[1]), &ctx, true),
-            ]
-        })
-        .collect();
+    let n = image_points.len();
+    let mut image_plus: Vec<[ThetaPointDimTwo<Fp>; 2]> = Vec::with_capacity(n);
+    let mut image_minus: Vec<[ThetaPointDimTwo<Fp>; 2]> = Vec::with_capacity(n);
+    for &[P, Q] in image_points {
+        let (P_plus, P_minus) = E.add_sub_generic(&P, &T_trans[0]);
+        let (Q_plus, Q_minus) = E.add_sub_generic(&Q, &T_trans[1]);
+        image_plus.push([
+            scholten_image(E, &P_plus, &ctx, true),
+            scholten_image(E, &Q_plus, &ctx, true),
+        ]);
+        image_minus.push([
+            scholten_image(E, &P_minus, &ctx, true),
+            scholten_image(E, &Q_minus, &ctx, true),
+        ]);
+    }
 
     ScholtenImages {
         diagonal_kernel,

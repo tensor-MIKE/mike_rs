@@ -7,6 +7,12 @@ use crate::gluing::gluing_isogeny;
 use crate::mike::mike_impl::KernelPoints;
 use crate::theta::dim_four::{ThetaPoint, ThetaStructure};
 
+/// Below this order the dim one strategy stops splitting and doubles all the
+/// way down, as dim one doublings are much cheaper than dim four ones (and
+/// every extra stack entry has to be pushed through the gluing). Tuned by
+/// benchmarking 4, 8, ..., 128: 16 is fastest for MIKE-I and MIKE-V.
+const DIM_ONE_SPLIT_THRESHOLD: usize = 16;
+
 impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
     /// Advance the balanced strategy by doubling kernel points until
     /// the top of the stack has order 2. Returns the new stack depth.
@@ -21,8 +27,7 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
         while orders[k] != 1 {
             k += 1;
 
-            let m = if orders[k - 1] >= 64 {
-                // What should this value be? the dim 2 chain uses 16
+            let m = if orders[k - 1] >= DIM_ONE_SPLIT_THRESHOLD {
                 orders[k - 1] >> 1
             } else {
                 orders[k - 1] - 1
@@ -44,14 +49,18 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
     }
 
     /// Compute the isogeny chain (E x E^sigma) -> A using a balanced strategy used for Mike
-    /// secret generation
-    pub fn mike_isogeny_chain(
+    /// secret generation.
+    ///
+    /// The kernels of the three gluing isogenies are derived from the top of
+    /// the dim one strategy stack and passed to `check_gluing_kernel` before
+    /// the gluing; an error from it is returned.
+    pub fn mike_isogeny_chain<E>(
         &self,
         a_div_three: &Fp2,
-        gluing_kernel: &KernelPoints<Fp2>,
         chain_kernel: &[[Point<Fp2>; 2]; 2],
         len: usize,
-    ) -> ThetaStructure<Fp> {
+        check_gluing_kernel: impl FnOnce(&KernelPoints<Fp2>) -> Result<(), E>,
+    ) -> Result<ThetaStructure<Fp>, E> {
         let n = len - 2;
         let space = (usize::BITS - n.leading_zeros() + 1) as usize;
 
@@ -63,9 +72,15 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
 
         let mut k = self.advance_strategy(a_div_three, &mut kernel_points, &mut orders, 0);
 
+        // The top of the stack is the chain kernel at the level of the gluing,
+        // from which we derive the kernels of all three gluing isogenies
+        let level = [kernel_points[2 * k], kernel_points[2 * k + 1]];
+        let gluing_kernel = KernelPoints::from_gluing_level(self, &level);
+        check_gluing_kernel(&gluing_kernel)?;
+
         // Compute the gluing isogeny and push through all the points we doubled for the strategy
         let (mut domain, mut theta_kernel) =
-            gluing_isogeny(self, gluing_kernel, &kernel_points[..(2 * k)]);
+            gluing_isogeny(self, &gluing_kernel, &kernel_points[..(2 * k)]);
         // Gluing isogeny creates theta_kernel of length 2*k but we need it to have a minimum size
         theta_kernel.resize(2 * space, ThetaPoint::default());
 
@@ -75,7 +90,10 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
         }
         k = k.saturating_sub(1);
 
-        for _ in 0..len {
+        // The three gluing steps (Scholten, diagonal, dim four gluing) are done,
+        // so e - 3 (2,2,2,2)-isogenies remain. Running the loop longer only
+        // recomputes the final codomain from the same exhausted kernel.
+        for _ in 0..(len - 3) {
             // Perform doublings of the kernel elements, decreasing the values of orders
             k = domain.advance_strategy(&mut theta_kernel, &mut orders, k);
 
@@ -93,6 +111,6 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
             k = k.saturating_sub(1);
         }
 
-        domain
+        Ok(domain)
     }
 }

@@ -236,15 +236,53 @@ pub struct KernelPoints<Fp2: Fp2Trait> {
     pub gluing_kernel: [[Point<Fp2>; 2]; 3],
 }
 
+impl<Fp2: Fp2Trait> KernelPoints<Fp2> {
+    /// Compute the kernels of the three gluing isogenies from the chain kernel
+    /// at the level of the gluing, i.e. from the pairs
+    ///     [[(s+1)Q_32, sQ_32], [-(s+1)P_32, -sP_32]]
+    /// which the dim one strategy computes anyway (as the top of its stack).
+    ///
+    /// The final gluing kernel is these two pairs together with their sum, and
+    /// we recover Q_32 = (s+1)Q_32 - sQ_32 and P_32 = -sP_32 + (s+1)P_32 with
+    /// two subtractions, so no doublings of P or Q are needed.
+    pub fn from_gluing_level(curve: &Curve<Fp2>, level: &[[Point<Fp2>; 2]; 2]) -> Self {
+        let [T1, s_Q_32] = level[0];
+        let [nT3, ns_P_32] = level[1];
+
+        // The kernel of the final gluing isogeny
+        let T4 = curve.add(&T1, &nT3);
+        let T5 = curve.add(&s_Q_32, &ns_P_32);
+        let gluing_kernel = [[T1, s_Q_32], [nT3, ns_P_32], [T4, T5]];
+
+        // Recover P_32 and Q_32 from the kernel pairs
+        let Q_32 = curve.sub(&T1, &s_Q_32);
+        let P_32 = curve.sub(&ns_P_32, &nT3);
+
+        // Compute points of order 16 for the diagonal isogeny kernel
+        let P_16 = curve.double(&P_32);
+        let Q_16 = curve.double(&Q_32);
+        let diagonal_kernel = [Q_16, P_16];
+
+        // Compute points of order 8 for the Scholten isogeny kernel
+        let P_8 = curve.double(&P_16);
+        let Q_8 = curve.double(&Q_16);
+        let scholten_kernel = [P_8, Q_8];
+
+        Self {
+            scholten_kernel,
+            diagonal_kernel,
+            gluing_kernel,
+        }
+    }
+}
+
 impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<Fp, Fp2, N> {
-    /// Generate three kernels for the gluing isogeny: scholten kernel, diagonal kernel
-    /// and the final gluing kernel, together with the chain kernel which generates the
-    /// rest of the dim 4 isogeny chain.
-    pub fn generate_kernel_elements(
-        &self,
-        curve: &Curve<Fp2>,
-        a_div_three: &Fp2,
-    ) -> (KernelPoints<Fp2>, [[Point<Fp2>; 2]; 2]) {
+    /// Generate the kernel of the full isogeny chain:
+    ///     [[(s+1)Q, sQ], [-(s+1)P, -sP]]
+    /// for the torsion basis E[2^(e + 2)] = <P, Q>. The kernels of the three
+    /// gluing isogenies are derived from this during the dim one strategy,
+    /// see `KernelPoints::from_gluing_level`.
+    pub fn generate_chain_kernel(&self, curve: &Curve<Fp2>) -> [[Point<Fp2>; 2]; 2] {
         // The user's secret key is used for a variety of scalar multiplications
         let s = self.secret;
 
@@ -269,40 +307,22 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
         let s_Q = curve.mul(&Q, &s, 1, self.constants.e);
         let T1 = curve.add(&s_Q, &Q);
         let T3 = curve.add(&s_P, &P);
-        let chain_kernel = [[T1, s_Q], [-T3, -s_P]];
+        [[T1, s_Q], [-T3, -s_P]]
+    }
 
-        // Compute intermediate points of order 32 by doubling many times
-        let P_32 = curve.double_iter_with_ws(&P, a_div_three, self.constants.e - 3);
-        let Q_32 = curve.double_iter_with_ws(&Q, a_div_three, self.constants.e - 3);
-
-        // Compute [n]P_32, [n]Q_32, for the final gluing kernel, we only need the bottom
-        // 5 bits of the scalars because of the order of P, Q
-        let s_P_32 = curve.mul(&P_32, &s, 1, 6);
-        let s_Q_32 = curve.mul(&Q_32, &s, 1, 6);
-        let T1 = curve.add(&s_Q_32, &Q_32);
-        let T3 = curve.add(&s_P_32, &P_32);
-        let T4 = curve.sub(&T1, &T3);
-        let T5 = curve.sub(&s_Q_32, &s_P_32);
-        let gluing_kernel = [[T1, s_Q_32], [-T3, -s_P_32], [T4, T5]];
-
-        // Compute points of order 16 for the diagonal isogeny kernel
-        let P_16 = curve.double(&P_32);
-        let Q_16 = curve.double(&Q_32);
-        let diagonal_kernel = [Q_16, P_16];
-
-        // Compute points of order 8 for the Scholten isogeny kernel
-        let P_8 = curve.double(&P_16);
-        let Q_8 = curve.double(&Q_16);
-        let scholten_kernel = [P_8, Q_8];
-
-        // Package all data together for the three gluing kernels and the chain kernel
-        let kernel_data = KernelPoints {
-            scholten_kernel,
-            diagonal_kernel,
-            gluing_kernel,
-        };
-
-        (kernel_data, chain_kernel)
+    /// Generate the kernels for the three gluing isogenies together with the
+    /// chain kernel. The shared secret derives the gluing kernels from the dim
+    /// one strategy instead, this is kept for benchmarking the gluing.
+    pub fn generate_kernel_elements(
+        &self,
+        curve: &Curve<Fp2>,
+        a_div_three: &Fp2,
+    ) -> (KernelPoints<Fp2>, [[Point<Fp2>; 2]; 2]) {
+        let chain_kernel = self.generate_chain_kernel(curve);
+        let level = chain_kernel.map(|pair| {
+            pair.map(|P| curve.double_iter_with_ws(&P, a_div_three, self.constants.e - 3))
+        });
+        (KernelPoints::from_gluing_level(curve, &level), chain_kernel)
     }
 
     #[cfg(not(feature = "allow_non_canonical_pk"))]
@@ -362,23 +382,20 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>, const N: usize> MikePrivateKey<
         // TODO: we could precompute 1/3 for each field to avoid this inversion
         let a_div_three = domain.A / Fp2::THREE;
 
-        // Compute the various bases needed for the isogeny chain kernel and the three
-        // gluing isogenies
-        let (gluing_kernel, chain_kernel) = self.generate_kernel_elements(&domain, &a_div_three);
+        // Compute the kernel of the isogeny chain
+        let chain_kernel = self.generate_chain_kernel(&domain);
 
-        // Before we compute the chain, we check whether P8 and Q8 are points
-        // of order exactly 8. This depends only on public data, so needs not
-        // be constant time. We also ensure the public key is the correct
-        // normalization as expected from the key generation.
-        Self::is_canonical_supersingular(&domain, &gluing_kernel.scholten_kernel)?;
-
-        // Compute the isogeny codomain
-        let codomain = domain.mike_isogeny_chain(
-            &a_div_three,
-            &gluing_kernel,
-            &chain_kernel,
-            self.constants.e,
-        );
+        // Compute the isogeny codomain. The gluing kernels are derived from
+        // the dim one strategy, and before any gluing we check whether P8 and
+        // Q8 are points of order exactly 8. P8 and Q8 are the same public
+        // points as before (only computed differently), so this check depends
+        // only on public data and needs not be constant time. We also ensure
+        // the public key is the correct normalization as expected from the
+        // key generation.
+        let codomain =
+            domain.mike_isogeny_chain(&a_div_three, &chain_kernel, self.constants.e, |kernel| {
+                Self::is_canonical_supersingular(&domain, &kernel.scholten_kernel)
+            })?;
 
         // Compute the absolute modular invariants
         let invariants = codomain.absolute_modular_invariants();
