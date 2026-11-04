@@ -93,7 +93,8 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
         // The three gluing steps (Scholten, diagonal, dim four gluing) are done,
         // so e - 3 (2,2,2,2)-isogenies remain. Running the loop longer only
         // recomputes the final codomain from the same exhausted kernel.
-        for _ in 0..(len - 3) {
+        let steps = len - 3;
+        for step in 0..steps {
             // Perform doublings of the kernel elements, decreasing the values of orders
             k = domain.advance_strategy(&mut theta_kernel, &mut orders, k);
 
@@ -102,7 +103,13 @@ impl<Fp: FqTrait, Fp2: Fp2Trait<BaseField = Fp>> Curve<Fp2> {
             let T2 = theta_kernel[2 * k + 1];
 
             // Perform one step of the (2,2) isogeny and push through all points.
-            domain = ThetaStructure::two_isogeny(&T1, &T2, &mut theta_kernel[..(2 * k)]);
+            let inv_null_dual =
+                ThetaStructure::two_isogeny_evaluate(&T1, &T2, &mut theta_kernel[..(2 * k)]);
+            // Only the public strategy controls this decision. When the next
+            // kernel is already ready, its evaluation does not use `domain`.
+            if step == steps - 1 || (k > 0 && orders[k - 1] > 2) {
+                domain = ThetaStructure::new_from_inv_null_dual(inv_null_dual);
+            }
 
             // Reduce the order of the points we evaluated
             for ord in orders.iter_mut().take(k) {
