@@ -206,6 +206,49 @@ impl<Fq: FqTrait> Curve<Fq> {
         R.set_cond(P, ctl_2);
     }
 
+    /// Compute (P + Q, P - Q) together. The two additions only differ in the
+    /// sign of YQ, so almost everything is shared.
+    ///
+    /// Generic case only: requires P, Q != 0 and P != +-Q (unlike `add_into`,
+    /// the exceptional cases are not handled).
+    ///
+    /// Cost: 6S + 15M (vs 12S + 34M for two calls to `add_into`)
+    pub fn add_sub_generic(&self, P: &Point<Fq>, Q: &Point<Fq>) -> (Point<Fq>, Point<Fq>) {
+        let (XP, YP, ZP) = (P.X, P.Y, P.Z);
+        let (XQ, YQ, ZQ) = (Q.X, Q.Y, Q.Z);
+
+        let t0 = ZP.square();
+        let t1 = ZQ.square();
+        let v1 = t1 * ZQ * YP;
+        let t2 = t0 * ZP * YQ;
+        let u2 = t0 * XQ;
+        let u1 = t1 * XP;
+
+        // Slopes for P + Q and P - Q (YQ -> -YQ), with the same dx
+        let dx = u2 - u1;
+        let dy_p = t2 - v1;
+        let dy_m = -(t2 + v1);
+
+        let z = ZP * ZQ;
+        let dx2 = dx.square();
+
+        // Shared: (A (ZP ZQ)^2 + u1 + u2) dx^2, u1 dx^2 and dx^3 v1
+        let mut s = self.A * z.square();
+        s += u1;
+        s += u2;
+        s *= dx2;
+        let u1dx2 = u1 * dx2;
+        let w = dx * dx2 * v1;
+        let ZR = dx * z;
+
+        let XR_p = dy_p.square() - s;
+        let XR_m = dy_m.square() - s;
+        let YR_p = (u1dx2 - XR_p) * dy_p - w;
+        let YR_m = (u1dx2 - XR_m) * dy_m - w;
+
+        (Point::new(&XR_p, &YR_p, &ZR), Point::new(&XR_m, &YR_m, &ZR))
+    }
+
     /// Given distinct points P, Q and the Montgomery coefficient A, compute
     /// (u, v, w) such that:
     ///   x(P + Q) = (u - v) / w
@@ -233,6 +276,43 @@ impl<Fq: FqTrait> Curve<Fq> {
         t6 = t5 - t6;
         t6.set_square();
         t1 = self.A * t0;
+        t1 += t5;
+        t1 *= t6;
+        let u = t4 - t1;
+        let w = t6 * t0;
+
+        (u, v, w)
+    }
+
+    /// As `add_components`, for a fixed point Q with ZQ^2 and ZQ^3
+    /// precomputed (saving 1M + 1S per call).
+    pub fn add_components_fixed_shift(
+        &self,
+        P: &Point<Fq>,
+        Q: &Point<Fq>,
+        ZQ2: &Fq,
+        ZQ3: &Fq,
+    ) -> (Fq, Fq, Fq) {
+        let (XP, YP, ZP) = (P.X, P.Y, P.Z);
+        let (XQ, YQ) = (Q.X, Q.Y);
+
+        let mut t0 = ZP.square();
+        let t2 = *ZQ2 * XP;
+        let t3 = t0 * XQ;
+        let mut t4 = YP * *ZQ3;
+        let mut t5 = ZP * YQ;
+        t5 *= t0;
+        t0 *= *ZQ2;
+        let mut t6 = t4 * t5;
+        let v = t6.mul2();
+        t4.set_square();
+        t5.set_square();
+        t4 += t5;
+        t5 = t2 + t3;
+        t6 = t3 + t3;
+        t6 = t5 - t6;
+        t6.set_square();
+        let mut t1 = self.A * t0;
         t1 += t5;
         t1 *= t6;
         let u = t4 - t1;
@@ -514,6 +594,39 @@ mod tests {
             let rhs = curve.add(&P, &rq);
 
             assert_eq!(lhs.equals(&rhs), u32::MAX);
+        }
+    }
+
+    #[test]
+    fn test_add_sub_generic_random() {
+        let curve = test_curve();
+        let mut rng = DRNG::from_seed("test_add_sub_generic_random".as_bytes());
+
+        for _ in 0..TEST_ITER {
+            let P = curve.rand_point(&mut rng);
+            let Q = curve.rand_point(&mut rng);
+
+            let (p_plus, p_minus) = curve.add_sub_generic(&P, &Q);
+
+            assert_eq!(p_plus.equals(&curve.add(&P, &Q)), u32::MAX);
+            assert_eq!(p_minus.equals(&curve.sub(&P, &Q)), u32::MAX);
+        }
+    }
+
+    #[test]
+    fn test_add_components_fixed_shift_random() {
+        let curve = test_curve();
+        let mut rng = DRNG::from_seed("test_add_components_fixed_shift_random".as_bytes());
+
+        for _ in 0..TEST_ITER {
+            let P = curve.rand_point(&mut rng);
+            let Q = curve.rand_point(&mut rng);
+            let ZQ2 = Q.Z.square();
+            let ZQ3 = ZQ2 * Q.Z;
+
+            let (u0, v0, w0) = curve.add_components(&P, &Q);
+            let (u1, v1, w1) = curve.add_components_fixed_shift(&P, &Q, &ZQ2, &ZQ3);
+            assert_eq!(u0.equals(&u1) & v0.equals(&v1) & w0.equals(&w1), u32::MAX);
         }
     }
 

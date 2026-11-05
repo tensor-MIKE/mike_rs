@@ -40,19 +40,25 @@ fn dim_two_to_dim_four<Fp: FqTrait>(
 fn proj_batch_inversion<const N: usize, Fq: FqTrait>(v: &mut [Fq; N]) {
     // TODO: a very similar thing is needed for theta points
     // I should refactor this and reuse it in both places.
+    //
+    // Products with ONE (inverses[1], and the outputs for i = 0, N - 1) and the
+    // unused full product multiples[N - 1] are skipped. Cost: 3(N - 2)M
+    debug_assert!(N >= 2);
     let mut multiples = [Fq::ONE; N];
     multiples[0] = v[0];
-    for i in 1..N {
+    for i in 1..(N - 1) {
         multiples[i] = multiples[i - 1] * v[i];
     }
 
     let mut inverses = [Fq::ONE; N];
-    for i in 1..N {
+    inverses[1] = v[N - 1];
+    for i in 2..N {
         inverses[i] = inverses[i - 1] * v[N - i];
     }
 
     v[0] = inverses[N - 1];
-    for i in 1..N {
+    v[N - 1] = multiples[N - 2];
+    for i in 1..(N - 1) {
         v[i] = inverses[N - 1 - i] * multiples[i - 1];
     }
 }
